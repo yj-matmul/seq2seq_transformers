@@ -196,3 +196,9 @@ class AllEncoders(nn.Module):
             all_encoder_layers.append(hidden_states)
         return all_encoder_layers
 
+
+class Decoder(nn.Module):
+    def __init__(self, config):
+        super(Decoder, self).__init__()
+        self.future_mask = torch.empty(0)
+
