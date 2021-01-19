@@ -112,7 +112,7 @@ class SelfAttention(nn.Module):
         attention_scores += attention_mask
 
         # [batch_size, num_attention_heads, seq_length, seq_length]
-        attention_probs = nn.Softmax(dim=1)(attention_scores)
+        attention_probs = nn.Softmax(dim=-1)(attention_scores)
 
         # [batch_size, num_attention_heads, seq_length, attention_head_size]
         context_layer = torch.matmul(attention_probs, value_layer)
