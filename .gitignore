@@ -1,3 +1,6 @@
 # Directories #
-.idea
-practice_pytorch/.ipynb_checkpoints
+.idea/
+practice_pytorch/.ipynb_checkpoints/
+
+# files #
+*.txt
