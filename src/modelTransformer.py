@@ -55,6 +55,10 @@ def get_positional_encoding_table(seq_length, hidden_size):
     return torch.FloatTensor(sinusoid_table)
 
 
+def get_attention_mask(inputs):
+
+
+
 class EncoderEmbedding(nn.Module):
     def __init__(self, config):
         super(EncoderEmbedding, self).__init__()
@@ -64,14 +68,14 @@ class EncoderEmbedding(nn.Module):
 
         self.layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-    def forward(self, input_ids):  # inputs : [batch_size, seq_length]
-        # [batch_size, seq_length]
+    def forward(self, input_ids):  # input_ids : [batch_size, seq_length]
+        # position_ids : [batch_size, seq_length]
         position_ids = torch.arange(input_ids.size()[1], dtype=torch.long, device=input_ids.device)
         position_ids = position_ids.unsqueeze(0).expand_as(input_ids) + 1
         position_mask = input_ids.eq(self.padding_idx)  # empty token
         position_ids.masked_fill_(position_mask, 0)
 
-        # [batch_size, seq_length, hidden_size]
+        # embeddings : [batch_size, seq_length, hidden_size]
         embeddings = self.word_embeddings(input_ids) + self.position_embeddings(position_ids)
         embeddings = self.layer_norm(embeddings)
         return embeddings
@@ -86,7 +90,7 @@ class DecoderEmbedding(nn.Module):
 
         self.layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-    def forward(self, input_ids):  # inputs : [batch_size, seq_length]
+    def forward(self, input_ids):  # input_ids : [batch_size, seq_length]
         # [batch_size, seq_length]
         position_ids = torch.arange(input_ids.size()[1], dtype=torch.long, device=input_ids.device)
         position_ids = position_ids.unsqueeze(0).expand_as(input_ids) + 1
@@ -179,11 +183,11 @@ class EncoderLayer(nn.Module):
         self.ffn = FeedForwardNet(config)
         self.layer_norm2 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-    def forward(self, hidden_states, attention_mask):
+    def forward(self, encoder_inputs, attention_mask):
         # self_attention_outputs : [batch_size, seq_length, hidden_size],
         # attention_probs : [batch_size, num_attention_heads, seq_length, seq_length]
-        self_attention_outputs, attention_probs = self.self_attention(hidden_states, hidden_states,
-                                                                      hidden_states, attention_mask)
+        self_attention_outputs, attention_probs = self.self_attention(encoder_inputs, encoder_inputs,
+                                                                      encoder_inputs, attention_mask)
         self_attention_outputs = self.layer_norm1(self_attention_outputs + inputs)
 
         # [batch_size, seq_length, hidden_size]
@@ -210,27 +214,52 @@ class Encoders(nn.Module):
 class DecoderLayer(nn.Module):
     def __init__(self, config):
         super(DecoderLayer, self).__init__()
-        self.masked_self_attention = MultiHeadAttention(config)
+        self.self_attention = MultiHeadAttention(config)
         self.layer_norm1 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.encoder_decoder_attention = MultiHeadAttention(config)
         self.layer_norm2 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.ffn = FeedForwardNet(config)
         self.layer_norm3 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
-    def forward(self, decoder_hidden_states, encoder_hidden_states, look_ahead_attention_mask, attention_mask):
-        # masked_self_attention_outputs : [batch_size, seq_length, hidden_size],
+    def forward(self, decoder_inputs, encoder_outputs, look_ahead_attention_mask, attention_mask):
+        # self_attention_outputs : [batch_size, seq_length, hidden_size],
         # self_attention_probs : [batch_size, num_attention_heads, seq_length, seq_length]
-        masked_self_attention_outputs, self_attention_probs = self.masked_self_attention(decoder_hidden_states,
-                                                                                         decoder_hidden_states,
-                                                                                         decoder_hidden_states,
-                                                                                         look_ahead_attention_mask)
-        masked_self_attention_outputs = self.layer_norm1(masked_self_attention_outputs + decoder_hidden_states)
+        self_attention_outputs, self_attention_probs = self.self_attention(decoder_inputs, decoder_inputs,
+                                                                           decoder_inputs, look_ahead_attention_mask)
+        self_attention_outputs = self.layer_norm1(self_attention_outputs + decoder_inputs)
 
-        encoder_decoder_attention_outpus, encoder_decoder_attention_probs = self.encoder_decoder_attention(decoder_hidden_states,
-                                                                                                           encoder_hidden_states,
-                                                                                                           encoder_hidden_states)
+        # attention_outputs : [batch_size, seq_length, hidden_size],
+        # attention_probs : [batch_size, num_attention_heads, seq_length, seq_length]
+        attention_outputs, attention_probs = self.encoder_decoder_attention(self_attention_outputs, encoder_outputs,
+                                                                            encoder_outputs, attention_mask)
+        attention_outputs = self.layer_norm2(attention_outputs + self_attention_outputs)
+
+        # ffn_outputs : [batch_size, seq_length, hidden_size]
+        ffn_outputs = self.ffn(attention_outputs)
+        ffn_outputs = self.layer_norm3(ffn_outputs + attention_outputs)
+        return ffn_outputs, self_attention_probs, attention_probs
 
 
+class Decoders(nn.Module):
+    def __init__(self, config):
+        super(Decoders, self).__init__()
+        self.layers = nn.ModuleList([DecoderLayer(config) for _ in range(config.num_hidden_layers)])
+
+    def forward(self, decoder_inputs, encoder_outputs, look_ahead_attention_mask, attention_mask):
+        # hidden_states : [batch_size, seq_length, hidden_size]
+        hidden_states = decoder_inputs
+        self_attention_probs, encoder_decoder_attention_probs = [], []
+        for layer in self.layers:
+            hidden_states, self_attention_prob, attention_prob = layer(hidden_states, encoder_outputs,
+                                                                       look_ahead_attention_mask, attention_mask)
+            self_attention_probs.append(self_attention_prob)
+            encoder_decoder_attention_probs.append(attention_prob)
+        return hidden_states, self_attention_probs, encoder_decoder_attention_probs
+
+
+class Transformer(nn.Module):
+    def __init__(self, config):
+        super(Transformer, self).__init__()
 
 
 
