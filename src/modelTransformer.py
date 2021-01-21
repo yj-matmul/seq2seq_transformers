@@ -14,29 +14,31 @@ ACT2FN = {'gelu': nn.GELU(), 'relu': nn.ReLU()}
 class TransformerConfig():
     def __init__(self,
                  src_vocab_size,
-                 tgt_vocab_size,
+                 trg_vocab_size,
                  hidden_size=512,
                  num_hidden_layers=6,
-                 num_attention_heads=8,
+                 num_attention_head=8,
                  hidden_act='relu',
                  feed_forward_size=2048,
                  padding_idx=0,
+                 share_embeddings=False,
                  hidden_dropout_prob=0.1,
                  attention_dropout_prob=0.1,
                  max_seq_length=512,
                  initializer_range=0.02,
                  layer_norm_eps=1e-12):
-        self.encoder_vocab_size = src_vocab_size
-        self.decoder_vocab_size = tgt_vocab_size
+        self.src_vocab_size = src_vocab_size
+        self.trg_vocab_size = trg_vocab_size
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
-        self.num_attention_heads = num_attention_heads
+        self.num_attention_head = num_attention_head
         self.hidden_act = hidden_act
         self.feed_forward_size = feed_forward_size
         self.padding_idx = padding_idx
+        self.share_embeddings = share_embeddings
         self.hidden_dropout_prob = hidden_dropout_prob
         self.attention_dropout_prob = attention_dropout_prob
-        self.max_position_embeddings = max_seq_length
+        self.max_seq_length = max_seq_length
         self.initializer_range = initializer_range
         self.layer_norm_eps = layer_norm_eps
 
@@ -55,52 +57,60 @@ def get_positional_encoding_table(seq_length, hidden_size):
     return torch.FloatTensor(sinusoid_table)
 
 
-def get_attention_mask(inputs):
+def get_attention_mask(input_ids, padding_idx):     # input_ids : [batch_size, seq_length]
+    seq_length = input_ids.size()[1]
+    # attention_mask : [batch_size, seq_length, seq_length]
+    attention_mask = input_ids.eq(padding_idx).unsqueeze(1).expand(-1, seq_length, seq_length)
+    return attention_mask
 
 
+def get_look_ahead_attention_mask(input_ids):
+    seq_length = input_ids.size()[1]
+    look_ahead_attention_mask = torch.ones_like(input_ids).unsqueeze(1).expand(-1, seq_length, seq_length)
+    look_ahead_attention_mask = look_ahead_attention_mask.triu(diagonal=1)
+    return look_ahead_attention_mask
 
-class EncoderEmbedding(nn.Module):
+
+class Embedding(nn.Module):
     def __init__(self, config):
-        super(EncoderEmbedding, self).__init__()
-        self.word_embeddings = nn.Embedding(config.src_vocab_size, config.hidden_size)
+        super(Embedding, self).__init__()
+        self.padding_idx = config.padding_idx
+        self.share_embeddings = config.share_embeddings
+        self.max_seq_length = config.max_seq_length
+
+        self.src_word_embeddings = nn.Embedding(config.src_vocab_size, config.hidden_size)
+        self.trg_word_embeddings = nn.Embedding(config.trg_vocab_size, config.hidden_size)
         position_table = get_positional_encoding_table(config.max_seq_length + 1, config.hidden_size)
-        self.position_embeddings = nn.Embedding.from_pretrained(position_table, freeze=True)
+        self.position_encodings = nn.Embedding.from_pretrained(position_table, freeze=True)
 
-        self.layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+    def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
+        # for change data type
+        encoder_inputs = encoder_inputs.type(torch.LongTensor)
+        decoder_inputs = decoder_inputs.type(torch.LongTensor)
 
-    def forward(self, input_ids):  # input_ids : [batch_size, seq_length]
-        # position_ids : [batch_size, seq_length]
-        position_ids = torch.arange(input_ids.size()[1], dtype=torch.long, device=input_ids.device)
-        position_ids = position_ids.unsqueeze(0).expand_as(input_ids) + 1
-        position_mask = input_ids.eq(self.padding_idx)  # empty token
-        position_ids.masked_fill_(position_mask, 0)
+        current_device = encoder_inputs.device
 
-        # embeddings : [batch_size, seq_length, hidden_size]
-        embeddings = self.word_embeddings(input_ids) + self.position_embeddings(position_ids)
-        embeddings = self.layer_norm(embeddings)
-        return embeddings
+        # encoder, decoder position encoding
+        position_ids = torch.arange(encoder_inputs.size()[1], dtype=torch.long, device=current_device)
+        position_ids = position_ids.unsqueeze(0).expand_as(encoder_inputs) + 1
+        position_mask = encoder_inputs.eq(self.padding_idx)
+        # encoder_position_ids : [batch_size, seq_length]
+        encoder_position_ids = torch.masked_fill(position_ids, position_mask, self.padding_idx)
+        position_mask = decoder_inputs.eq(self.padding_idx)
+        # decoder_position_ids : [batch_size, seq_length]
+        decoder_position_ids = torch.masked_fill(position_ids, position_mask, self.padding_idx)
 
-
-class DecoderEmbedding(nn.Module):
-    def __init__(self, config):
-        super(DecoderEmbedding, self).__init__()
-        self.word_embeddings = nn.Embedding(config.tgt_vocab_size, config.hidden_size)
-        position_table = get_positional_encoding_table(config.max_seq_length + 1, config.hidden_size)
-        self.position_embeddings = nn.Embedding.from_pretrained(position_table, freeze=True)
-
-        self.layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-
-    def forward(self, input_ids):  # input_ids : [batch_size, seq_length]
-        # [batch_size, seq_length]
-        position_ids = torch.arange(input_ids.size()[1], dtype=torch.long, device=input_ids.device)
-        position_ids = position_ids.unsqueeze(0).expand_as(input_ids) + 1
-        position_mask = input_ids.eq(self.padding_idx)  # empty token
-        position_ids.masked_fill_(position_mask, 0)
-
-        # [batch_size, seq_length, hidden_size]
-        embeddings = self.word_embeddings(input_ids) + self.position_embeddings(position_ids)
-        embeddings = self.layer_norm(embeddings)
-        return embeddings
+        # src_word_embeddings, src_word_embeddings : [batch_size, seq_length, hidden_size]
+        src_word_embeddings = self.src_word_embeddings(encoder_inputs).to(current_device)
+        print('Embedding', src_word_embeddings.device)
+        if self.share_embeddings:
+            trg_word_embeddings = src_word_embeddings
+        else:
+            trg_word_embeddings = self.trg_word_embeddings(decoder_inputs).to(current_device)
+        print('Embedding', self.position_encodings(encoder_position_ids).device)
+        encoder_embeddings = src_word_embeddings + self.position_encodings(encoder_position_ids)
+        decoder_embeddings = trg_word_embeddings + self.position_encodings(decoder_position_ids)
+        return encoder_embeddings, decoder_embeddings
 
 
 class MultiHeadAttention(nn.Module):
@@ -186,9 +196,10 @@ class EncoderLayer(nn.Module):
     def forward(self, encoder_inputs, attention_mask):
         # self_attention_outputs : [batch_size, seq_length, hidden_size],
         # attention_probs : [batch_size, num_attention_heads, seq_length, seq_length]
+        print('EncoderLayer', encoder_inputs.device)
         self_attention_outputs, attention_probs = self.self_attention(encoder_inputs, encoder_inputs,
                                                                       encoder_inputs, attention_mask)
-        self_attention_outputs = self.layer_norm1(self_attention_outputs + inputs)
+        self_attention_outputs = self.layer_norm1(self_attention_outputs + encoder_inputs)
 
         # [batch_size, seq_length, hidden_size]
         ffn_outputs = self.ffn(self_attention_outputs)
@@ -201,9 +212,10 @@ class Encoders(nn.Module):
         super(Encoders, self).__init__()
         self.layers = nn.ModuleList([EncoderLayer(config) for _ in range(config.num_hidden_layers)])
 
-    def forward(self, hidden_states, attention_mask):   #
+    def forward(self, hidden_states, attention_mask):
         # hidden_states : [batch_size, seq_length, hidden_size]
         # attention_mask : [batch_size, seq_length, seq_length]
+        print('Encoders', hidden_states.device, attention_mask.device)
         attention_probs = []
         for layer in self.layers:
             hidden_states, attention_prob = layer(hidden_states, attention_mask)
@@ -245,7 +257,7 @@ class Decoders(nn.Module):
         super(Decoders, self).__init__()
         self.layers = nn.ModuleList([DecoderLayer(config) for _ in range(config.num_hidden_layers)])
 
-    def forward(self, decoder_inputs, encoder_outputs, look_ahead_attention_mask, attention_mask):
+    def forward(self, encoder_outputs, decoder_inputs, look_ahead_attention_mask, attention_mask):
         # hidden_states : [batch_size, seq_length, hidden_size]
         hidden_states = decoder_inputs
         self_attention_probs, encoder_decoder_attention_probs = [], []
@@ -260,14 +272,44 @@ class Decoders(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, config):
         super(Transformer, self).__init__()
+        self.padding_idx = config.padding_idx
+        self.share_embeddings = config.share_embeddings
+        self.max_seq_length = config.max_seq_length
 
+        self.embedding = Embedding(config)
+        self.encoders = Encoders(config)
+        self.decoders = Decoders(config)
+
+    def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
+        # create_mask > [batch_size, seq_length, seq_length]
+        encoder_attention_mask = get_attention_mask(encoder_inputs, self.padding_idx)
+        look_ahead_attention_mask = get_look_ahead_attention_mask(decoder_inputs)
+        decoder_attention_mask = get_attention_mask(decoder_inputs, self.padding_idx)
+
+        # embedding
+        print('Transformer', encoder_inputs.device, decoder_inputs.device)
+        encoder_embeddings, decoder_embeddings = self.embedding(encoder_inputs, decoder_inputs)
+
+        # encoder
+        encoder_outputs, encoder_attention_probs = self.encoders(encoder_embeddings, encoder_attention_mask)
+
+        # decoder
+        decoder_outputs, masked_attention_probs, decoder_attention_probs \
+            = self.decoders(encoder_outputs, decoder_inputs, look_ahead_attention_mask, decoder_attention_mask)
+
+        total_attention_probs = {}
+        total_attention_probs['encoder_attention_probs'] = encoder_attention_probs
+        total_attention_probs['masked_attention_probs'] = masked_attention_probs
+        total_attention_probs['decoder_attention_probs'] = decoder_attention_probs
+        return decoder_outputs, total_attention_probs
 
 
 if __name__ == '__main__':
-    config = TransformerConfig(100,
-                               100)
-    inputs = torch.tensor([[3091, 3604,  206, 3958, 3760, 3590,    0,    0],
-                           [ 212, 3605,   53, 3832, 3596, 3682, 3760, 3590]])
+    config = TransformerConfig(5000,
+                               5000)
+    inputs = torch.randint(5000, (2, 8), dtype=torch.float, device='cuda:0')
 
-    print(inputs.eq(0).unsqueeze(1).size())
-    print(inputs.eq(0).unsqueeze(1))
+    transformer = Transformer(config)
+    print(inputs.size())
+    transformer_outputs, attentions = transformer(inputs, inputs)
+    print(transformer_outputs.size())
