@@ -1,16 +1,13 @@
 import numpy as np
 import math
-import copy
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 ACT2FN = {'gelu': nn.GELU(), 'relu': nn.ReLU()}
 
 
-# paul-hyun, graykode, huggingface 참고한 transformer 구현 코드
 class TransformerConfig():
     def __init__(self,
                  src_vocab_size,
@@ -19,7 +16,7 @@ class TransformerConfig():
                  num_hidden_layers=12,
                  num_attention_head=8,
                  hidden_act='relu',
-                 device='cuda',
+                 device='cuda:0',
                  feed_forward_size=1100,
                  padding_idx=0,
                  share_embeddings=False,
