@@ -15,11 +15,12 @@ class TransformerConfig():
     def __init__(self,
                  src_vocab_size,
                  trg_vocab_size,
-                 hidden_size=512,
-                 num_hidden_layers=6,
+                 hidden_size=128,
+                 num_hidden_layers=12,
                  num_attention_head=8,
                  hidden_act='relu',
-                 feed_forward_size=2048,
+                 device='cuda',
+                 feed_forward_size=1100,
                  padding_idx=0,
                  share_embeddings=False,
                  hidden_dropout_prob=0.1,
@@ -33,6 +34,7 @@ class TransformerConfig():
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_head = num_attention_head
         self.hidden_act = hidden_act
+        self.device = device
         self.feed_forward_size = feed_forward_size
         self.padding_idx = padding_idx
         self.share_embeddings = share_embeddings
@@ -77,21 +79,20 @@ class Embedding(nn.Module):
         self.padding_idx = config.padding_idx
         self.share_embeddings = config.share_embeddings
         self.max_seq_length = config.max_seq_length
+        self.device = config.device
 
-        self.src_word_embeddings = nn.Embedding(config.src_vocab_size, config.hidden_size)
-        self.trg_word_embeddings = nn.Embedding(config.trg_vocab_size, config.hidden_size)
+        self.src_word_embeddings = nn.Embedding(config.src_vocab_size, config.hidden_size).to(self.device)
+        self.trg_word_embeddings = nn.Embedding(config.trg_vocab_size, config.hidden_size).to(self.device)
         position_table = get_positional_encoding_table(config.max_seq_length + 1, config.hidden_size)
-        self.position_encodings = nn.Embedding.from_pretrained(position_table, freeze=True)
+        self.position_encodings = nn.Embedding.from_pretrained(position_table, freeze=True).to(self.device)
 
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
         # for change data type
-        encoder_inputs = encoder_inputs.type(torch.LongTensor)
-        decoder_inputs = decoder_inputs.type(torch.LongTensor)
-
-        current_device = encoder_inputs.device
+        encoder_inputs = encoder_inputs.type(torch.LongTensor).to(self.device)
+        decoder_inputs = decoder_inputs.type(torch.LongTensor).to(self.device)
 
         # encoder, decoder position encoding
-        position_ids = torch.arange(encoder_inputs.size()[1], dtype=torch.long, device=current_device)
+        position_ids = torch.arange(encoder_inputs.size()[1], dtype=torch.long, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand_as(encoder_inputs) + 1
         position_mask = encoder_inputs.eq(self.padding_idx)
         # encoder_position_ids : [batch_size, seq_length]
@@ -101,13 +102,12 @@ class Embedding(nn.Module):
         decoder_position_ids = torch.masked_fill(position_ids, position_mask, self.padding_idx)
 
         # src_word_embeddings, src_word_embeddings : [batch_size, seq_length, hidden_size]
-        src_word_embeddings = self.src_word_embeddings(encoder_inputs).to(current_device)
-        print('Embedding', src_word_embeddings.device)
+        src_word_embeddings = self.src_word_embeddings(encoder_inputs)
         if self.share_embeddings:
             trg_word_embeddings = src_word_embeddings
         else:
-            trg_word_embeddings = self.trg_word_embeddings(decoder_inputs).to(current_device)
-        print('Embedding', self.position_encodings(encoder_position_ids).device)
+            trg_word_embeddings = self.trg_word_embeddings(decoder_inputs)
+
         encoder_embeddings = src_word_embeddings + self.position_encodings(encoder_position_ids)
         decoder_embeddings = trg_word_embeddings + self.position_encodings(decoder_position_ids)
         return encoder_embeddings, decoder_embeddings
@@ -119,13 +119,14 @@ class MultiHeadAttention(nn.Module):
         self.num_attention_head = config.num_attention_head
         self.attention_head_size = config.hidden_size // config.num_attention_head
         self.all_head_size = self.num_attention_head * self.attention_head_size
+        self.device = config.device
 
-        self.weight_query = nn.Linear(config.hidden_size, self.all_head_size)
-        self.weight_key = nn.Linear(config.hidden_size, self.all_head_size)
-        self.weight_value = nn.Linear(config.hidden_size, self.all_head_size)
+        self.weight_query = nn.Linear(config.hidden_size, self.all_head_size).to(self.device)
+        self.weight_key = nn.Linear(config.hidden_size, self.all_head_size).to(self.device)
+        self.weight_value = nn.Linear(config.hidden_size, self.all_head_size).to(self.device)
 
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        self.dropout = nn.Dropout(config.attention_dropout_prob)
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size).to(self.device)
+        self.dropout = nn.Dropout(config.attention_dropout_prob).to(self.device)
 
     def transpose_for_attention_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_head, self.attention_head_size)
@@ -170,10 +171,12 @@ class MultiHeadAttention(nn.Module):
 class FeedForwardNet(nn.Module):
     def __init__(self, config):
         super(FeedForwardNet, self).__init__()
-        self.dense1 = nn.Linear(config.hidden_size, config.feed_forward_size)
+        self.device = config.device
+
+        self.dense1 = nn.Linear(config.hidden_size, config.feed_forward_size).to(self.device)
         self.ffn_act = ACT2FN[config.hidden_act]
-        self.dense2 = nn.Linear(config.feed_forward_size, config.hidden_size)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.dense2 = nn.Linear(config.feed_forward_size, config.hidden_size).to(self.device)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob).to(self.device)
 
     def forward(self, inputs):
         # [batch_size, seq_length, feed_forward_size]
@@ -196,7 +199,6 @@ class EncoderLayer(nn.Module):
     def forward(self, encoder_inputs, attention_mask):
         # self_attention_outputs : [batch_size, seq_length, hidden_size],
         # attention_probs : [batch_size, num_attention_heads, seq_length, seq_length]
-        print('EncoderLayer', encoder_inputs.device)
         self_attention_outputs, attention_probs = self.self_attention(encoder_inputs, encoder_inputs,
                                                                       encoder_inputs, attention_mask)
         self_attention_outputs = self.layer_norm1(self_attention_outputs + encoder_inputs)
@@ -215,11 +217,12 @@ class Encoders(nn.Module):
     def forward(self, hidden_states, attention_mask):
         # hidden_states : [batch_size, seq_length, hidden_size]
         # attention_mask : [batch_size, seq_length, seq_length]
-        print('Encoders', hidden_states.device, attention_mask.device)
+
         attention_probs = []
-        for layer in self.layers:
+        for i,layer in enumerate(self.layers):
             hidden_states, attention_prob = layer(hidden_states, attention_mask)
             attention_probs.append(attention_prob)
+            print('Encoders', i)
         return hidden_states, attention_probs
 
 
@@ -236,6 +239,7 @@ class DecoderLayer(nn.Module):
     def forward(self, decoder_inputs, encoder_outputs, look_ahead_attention_mask, attention_mask):
         # self_attention_outputs : [batch_size, seq_length, hidden_size],
         # self_attention_probs : [batch_size, num_attention_heads, seq_length, seq_length]
+        #print('DecoderLayer', decoder_inputs.size(), encoder_outputs.size())
         self_attention_outputs, self_attention_probs = self.self_attention(decoder_inputs, decoder_inputs,
                                                                            decoder_inputs, look_ahead_attention_mask)
         self_attention_outputs = self.layer_norm1(self_attention_outputs + decoder_inputs)
@@ -261,11 +265,12 @@ class Decoders(nn.Module):
         # hidden_states : [batch_size, seq_length, hidden_size]
         hidden_states = decoder_inputs
         self_attention_probs, encoder_decoder_attention_probs = [], []
-        for layer in self.layers:
+        for i, layer in enumerate(self.layers):
             hidden_states, self_attention_prob, attention_prob = layer(hidden_states, encoder_outputs,
                                                                        look_ahead_attention_mask, attention_mask)
             self_attention_probs.append(self_attention_prob)
             encoder_decoder_attention_probs.append(attention_prob)
+            print('Decoders', i)
         return hidden_states, self_attention_probs, encoder_decoder_attention_probs
 
 
@@ -274,7 +279,7 @@ class Transformer(nn.Module):
         super(Transformer, self).__init__()
         self.padding_idx = config.padding_idx
         self.share_embeddings = config.share_embeddings
-        self.max_seq_length = config.max_seq_length
+        self.device = config.device
 
         self.embedding = Embedding(config)
         self.encoders = Encoders(config)
@@ -283,11 +288,11 @@ class Transformer(nn.Module):
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
         # create_mask > [batch_size, seq_length, seq_length]
         encoder_attention_mask = get_attention_mask(encoder_inputs, self.padding_idx)
-        look_ahead_attention_mask = get_look_ahead_attention_mask(decoder_inputs)
         decoder_attention_mask = get_attention_mask(decoder_inputs, self.padding_idx)
+        look_ahead_attention_mask = get_look_ahead_attention_mask(decoder_inputs).to(self.device)
+        look_ahead_attention_mask = torch.gt((decoder_attention_mask + look_ahead_attention_mask), 0)
 
         # embedding
-        print('Transformer', encoder_inputs.device, decoder_inputs.device)
         encoder_embeddings, decoder_embeddings = self.embedding(encoder_inputs, decoder_inputs)
 
         # encoder
@@ -295,7 +300,7 @@ class Transformer(nn.Module):
 
         # decoder
         decoder_outputs, masked_attention_probs, decoder_attention_probs \
-            = self.decoders(encoder_outputs, decoder_inputs, look_ahead_attention_mask, decoder_attention_mask)
+            = self.decoders(encoder_outputs, decoder_embeddings, look_ahead_attention_mask, decoder_attention_mask)
 
         total_attention_probs = {}
         total_attention_probs['encoder_attention_probs'] = encoder_attention_probs
@@ -307,9 +312,8 @@ class Transformer(nn.Module):
 if __name__ == '__main__':
     config = TransformerConfig(5000,
                                5000)
-    inputs = torch.randint(5000, (2, 8), dtype=torch.float, device='cuda:0')
+    inputs = torch.randint(5000, (2, 8), dtype=torch.float, device=config.device)
 
     transformer = Transformer(config)
-    print(inputs.size())
     transformer_outputs, attentions = transformer(inputs, inputs)
     print(transformer_outputs.size())
