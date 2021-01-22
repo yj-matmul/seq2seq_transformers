@@ -12,17 +12,17 @@ class TransformerConfig():
     def __init__(self,
                  src_vocab_size,
                  trg_vocab_size,
-                 hidden_size=128,
-                 num_hidden_layers=12,
+                 hidden_size=512,
+                 num_hidden_layers=6,
                  num_attention_head=8,
                  hidden_act='relu',
                  device='cuda:0',
-                 feed_forward_size=1100,
+                 feed_forward_size=1024,
                  padding_idx=0,
                  share_embeddings=False,
                  hidden_dropout_prob=0.1,
                  attention_dropout_prob=0.1,
-                 max_seq_length=512,
+                 max_seq_length=128,
                  initializer_range=0.02,
                  layer_norm_eps=1e-12):
         self.src_vocab_size = src_vocab_size
@@ -84,7 +84,7 @@ class Embedding(nn.Module):
         self.position_encodings = nn.Embedding.from_pretrained(position_table, freeze=True).to(self.device)
 
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
-        # for change data type
+        # change data type for word embedding
         encoder_inputs = encoder_inputs.type(torch.LongTensor).to(self.device)
         decoder_inputs = decoder_inputs.type(torch.LongTensor).to(self.device)
 
@@ -281,6 +281,8 @@ class Transformer(nn.Module):
         self.embedding = Embedding(config)
         self.encoders = Encoders(config)
         self.decoders = Decoders(config)
+        self.dense = nn.Linear(config.hidden_size, config.trg_vocab_size, bias=False).to(self.device)
+
 
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
         # create_mask > [batch_size, seq_length, seq_length]
@@ -303,7 +305,11 @@ class Transformer(nn.Module):
         total_attention_probs['encoder_attention_probs'] = encoder_attention_probs
         total_attention_probs['masked_attention_probs'] = masked_attention_probs
         total_attention_probs['decoder_attention_probs'] = decoder_attention_probs
-        return decoder_outputs, total_attention_probs
+
+        outputs = self.dense(decoder_outputs)
+        print(decoder_outputs.device)
+        outputs = nn.Softmax(dim=-1)(outputs)
+        return outputs, total_attention_probs
 
 
 if __name__ == '__main__':
