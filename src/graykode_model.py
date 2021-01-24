@@ -7,7 +7,11 @@ import matplotlib.pyplot as plt
 # S: Symbol that shows starting of decoding input
 # E: Symbol that shows starting of decoding output
 # P: Symbol that will fill in blank sequence if current batch data size is short than time steps
+print('cuda is available',  torch.cuda.is_available())
+if torch.cuda.is_available():
+    cur_device = torch.cuda.set_device(0)
 cur_device = 'cuda'
+print('cur_device:', cur_device)
 
 def make_batch(sentences):
     input_batch = [[src_vocab[n] for n in sentences[0].split()]]
@@ -88,7 +92,7 @@ class PoswiseFeedForwardNet(nn.Module):
         residual = inputs # inputs : [batch_size, len_q, d_model]
         output = nn.ReLU()(self.conv1(inputs))
         output = self.conv2(output)
-        print('PoswiseFeedForwardNet', output.device, output.size())
+        # print('PoswiseFeedForwardNet', output.device, output.size())
         return self.layer_norm(output + residual)
 
 class EncoderLayer(nn.Module):
@@ -139,7 +143,8 @@ class Decoder(nn.Module):
         self.layers = nn.ModuleList([DecoderLayer() for _ in range(n_layers)])
 
     def forward(self, dec_inputs, enc_inputs, enc_outputs): # dec_inputs : [batch_size x target_len]
-        dec_outputs = self.tgt_emb(dec_inputs) + self.pos_emb(torch.LongTensor([[5,1,2,3,4]]))
+        print(self.pos_emb(torch.LongTensor([[0, 1, 2, 3, 4]]).to(cur_device)).size())
+        dec_outputs = self.tgt_emb(dec_inputs) + self.pos_emb(torch.LongTensor([[0,1,2,3,4]]).to(cur_device))
         dec_self_attn_pad_mask = get_attn_pad_mask(dec_inputs, dec_inputs)
         dec_self_attn_subsequent_mask = get_attn_subsequent_mask(dec_inputs)
         dec_self_attn_mask = torch.gt((dec_self_attn_pad_mask + dec_self_attn_subsequent_mask), 0)
@@ -205,7 +210,7 @@ if __name__ == '__main__':
     enc_inputs = enc_inputs.to(cur_device)
     dec_inputs = dec_inputs.to(cur_device)
     target_batch = target_batch.to(cur_device)
-    print(enc_inputs.device)
+    print('enc_inputs', enc_inputs.device)
 
     for epoch in range(5):
         optimizer.zero_grad()
