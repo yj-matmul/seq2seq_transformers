@@ -61,7 +61,7 @@ class MultiHeadAttention(nn.Module):
         self.W_K = nn.Linear(d_model, d_k * n_heads).to(cur_device)
         self.W_V = nn.Linear(d_model, d_v * n_heads).to(cur_device)
         self.linear = nn.Linear(n_heads * d_v, d_model).to(cur_device)
-        self.layer_norm = nn.LayerNorm(d_model)
+        self.layer_norm = nn.LayerNorm(d_model).to(cur_device)
 
     def forward(self, Q, K, V, attn_mask):
         # q: [batch_size x len_q x d_model], k: [batch_size x len_k x d_model], v: [batch_size x len_k x d_model]
@@ -86,7 +86,7 @@ class PoswiseFeedForwardNet(nn.Module):
         # self.conv2 = nn.Conv1d(in_channels=d_ff, out_channels=d_model, kernel_size=1).to(cur_device)
         self.conv1 = nn.Linear(d_model, d_ff).to(cur_device)
         self.conv2 = nn.Linear(d_ff, d_model).to(cur_device)
-        self.layer_norm = nn.LayerNorm(d_model)
+        self.layer_norm = nn.LayerNorm(d_model).to(cur_device)
 
     def forward(self, inputs):
         residual = inputs # inputs : [batch_size, len_q, d_model]

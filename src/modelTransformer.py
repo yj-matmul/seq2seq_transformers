@@ -5,19 +5,19 @@ import torch
 import torch.nn as nn
 
 
-ACT2FN = {'gelu': nn.GELU(), 'relu': nn.ReLU()}
+ACT2FN = {'gelu': '', 'relu': nn.ReLU()}
 
 
 class TransformerConfig():
     def __init__(self,
                  src_vocab_size,
                  trg_vocab_size,
-                 hidden_size=512,
-                 num_hidden_layers=6,
+                 hidden_size=768,
+                 num_hidden_layers=12,
                  num_attention_head=8,
                  hidden_act='relu',
                  device='cuda:0',
-                 feed_forward_size=1024,
+                 feed_forward_size=3072,
                  padding_idx=0,
                  share_embeddings=False,
                  hidden_dropout_prob=0.1,
@@ -66,7 +66,7 @@ def get_attention_mask(input_ids, padding_idx):     # input_ids : [batch_size, s
 def get_look_ahead_attention_mask(input_ids):
     seq_length = input_ids.size()[1]
     look_ahead_attention_mask = torch.ones_like(input_ids).unsqueeze(1).expand(-1, seq_length, seq_length)
-    look_ahead_attention_mask = look_ahead_attention_mask.triu(diagonal=1)
+    look_ahead_attention_mask = look_ahead_attention_mask.triu(diagonal=1).byte()
     return look_ahead_attention_mask
 
 
@@ -78,10 +78,10 @@ class Embedding(nn.Module):
         self.max_seq_length = config.max_seq_length
         self.device = config.device
 
-        self.src_word_embeddings = nn.Embedding(config.src_vocab_size, config.hidden_size).to(self.device)
-        self.trg_word_embeddings = nn.Embedding(config.trg_vocab_size, config.hidden_size).to(self.device)
+        self.src_word_embeddings = nn.Embedding(config.src_vocab_size, config.hidden_size).to(config.device)
+        self.trg_word_embeddings = nn.Embedding(config.trg_vocab_size, config.hidden_size).to(config.device)
         position_table = get_positional_encoding_table(config.max_seq_length + 1, config.hidden_size)
-        self.position_encodings = nn.Embedding.from_pretrained(position_table, freeze=True).to(self.device)
+        self.position_encodings = nn.Embedding.from_pretrained(position_table, freeze=True).to(config.device)
 
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
         # change data type for word embedding
@@ -116,14 +116,13 @@ class MultiHeadAttention(nn.Module):
         self.num_attention_head = config.num_attention_head
         self.attention_head_size = config.hidden_size // config.num_attention_head
         self.all_head_size = self.num_attention_head * self.attention_head_size
-        self.device = config.device
 
-        self.weight_query = nn.Linear(config.hidden_size, self.all_head_size).to(self.device)
-        self.weight_key = nn.Linear(config.hidden_size, self.all_head_size).to(self.device)
-        self.weight_value = nn.Linear(config.hidden_size, self.all_head_size).to(self.device)
+        self.weight_query = nn.Linear(config.hidden_size, self.all_head_size).to(config.device)
+        self.weight_key = nn.Linear(config.hidden_size, self.all_head_size).to(config.device)
+        self.weight_value = nn.Linear(config.hidden_size, self.all_head_size).to(config.device)
 
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size).to(self.device)
-        self.dropout = nn.Dropout(config.attention_dropout_prob).to(self.device)
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size).to(config.device)
+        self.dropout = nn.Dropout(config.attention_dropout_prob).to(config.device)
 
     def transpose_for_attention_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_head, self.attention_head_size)
@@ -147,6 +146,7 @@ class MultiHeadAttention(nn.Module):
         # [batch_size, num_attention_heads, seq_length, seq_length]
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+        print(attention_scores.type())
         attention_scores.masked_fill_(attention_mask, -1e9)
 
         # [batch_size, num_attention_heads, seq_length, seq_length]
@@ -168,12 +168,10 @@ class MultiHeadAttention(nn.Module):
 class FeedForwardNet(nn.Module):
     def __init__(self, config):
         super(FeedForwardNet, self).__init__()
-        self.device = config.device
-
-        self.dense1 = nn.Linear(config.hidden_size, config.feed_forward_size).to(self.device)
+        self.dense1 = nn.Linear(config.hidden_size, config.feed_forward_size).to(config.device)
         self.ffn_act = ACT2FN[config.hidden_act]
-        self.dense2 = nn.Linear(config.feed_forward_size, config.hidden_size).to(self.device)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob).to(self.device)
+        self.dense2 = nn.Linear(config.feed_forward_size, config.hidden_size).to(config.device)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob).to(config.device)
 
     def forward(self, inputs):
         # [batch_size, seq_length, feed_forward_size]
@@ -189,9 +187,9 @@ class EncoderLayer(nn.Module):
     def __init__(self, config):
         super(EncoderLayer, self).__init__()
         self.self_attention = MultiHeadAttention(config)
-        self.layer_norm1 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.layer_norm1 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps).to(config.device)
         self.ffn = FeedForwardNet(config)
-        self.layer_norm2 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.layer_norm2 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps).to(config.device)
 
     def forward(self, encoder_inputs, attention_mask):
         # self_attention_outputs : [batch_size, seq_length, hidden_size],
@@ -227,11 +225,11 @@ class DecoderLayer(nn.Module):
     def __init__(self, config):
         super(DecoderLayer, self).__init__()
         self.self_attention = MultiHeadAttention(config)
-        self.layer_norm1 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.layer_norm1 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps).to(config.device)
         self.encoder_decoder_attention = MultiHeadAttention(config)
-        self.layer_norm2 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.layer_norm2 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps).to(config.device)
         self.ffn = FeedForwardNet(config)
-        self.layer_norm3 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.layer_norm3 = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps).to(config.device)
 
     def forward(self, decoder_inputs, encoder_outputs, look_ahead_attention_mask, attention_mask):
         # self_attention_outputs : [batch_size, seq_length, hidden_size],
@@ -281,7 +279,7 @@ class Transformer(nn.Module):
         self.embedding = Embedding(config)
         self.encoders = Encoders(config)
         self.decoders = Decoders(config)
-        self.dense = nn.Linear(config.hidden_size, config.trg_vocab_size, bias=False).to(self.device)
+        self.dense = nn.Linear(config.hidden_size, config.trg_vocab_size, bias=False).to(config.device)
 
 
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
@@ -289,6 +287,8 @@ class Transformer(nn.Module):
         encoder_attention_mask = get_attention_mask(encoder_inputs, self.padding_idx)
         decoder_attention_mask = get_attention_mask(decoder_inputs, self.padding_idx)
         look_ahead_attention_mask = get_look_ahead_attention_mask(decoder_inputs).to(self.device)
+        print('decoder mask', decoder_attention_mask.type())
+        print('look ahead mask', look_ahead_attention_mask.type())
         look_ahead_attention_mask = torch.gt((decoder_attention_mask + look_ahead_attention_mask), 0)
 
         # embedding
@@ -316,6 +316,7 @@ if __name__ == '__main__':
     config = TransformerConfig(5000,
                                5000)
     inputs = torch.randint(5000, (2, 8), dtype=torch.float, device=config.device)
+    print(inputs.device)
 
     transformer = Transformer(config)
     transformer_outputs, attentions = transformer(inputs, inputs)
