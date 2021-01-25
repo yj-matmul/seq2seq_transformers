@@ -302,7 +302,6 @@ class Transformer(nn.Module):
         total_attention_probs['decoder_attention_probs'] = decoder_attention_probs
 
         outputs = self.dense(decoder_outputs)
-        outputs = nn.Softmax(dim=-1)(outputs)
         return outputs, total_attention_probs
 
 

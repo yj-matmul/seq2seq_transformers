@@ -4,33 +4,36 @@ from transformer_yyj import Transformer, TransformerConfig
 from torch import optim
 
 if __name__ == '__main__':
-    config = TransformerConfig(src_vocab_size=5000,
-                               trg_vocab_size=5000,
+    vocab_size = 100
+    config = TransformerConfig(src_vocab_size=vocab_size,
+                               trg_vocab_size=vocab_size,
                                device='cuda')
 
-    inputs = torch.randint(5000, (4, 12), dtype=torch.float, device=config.device)
-    labels = torch.randint(5000, (4, 12), dtype=torch.float, device=config.device)
+    inputs = torch.randint(vocab_size, (100, 8), dtype=torch.float, device=config.device)
+    labels = torch.randint(vocab_size, (100, 8), dtype=torch.float, device=config.device)
 
     model = Transformer(config)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=5e-5)
 
-    total_epoch = 10
+    total_epoch = 50
 
     model.train()
     for epoch in range(total_epoch):
         optimizer.zero_grad()
         outputs, _ = model(inputs, labels)
-        outputs = outputs.contiguous().view(-1, 5000)
+        outputs = outputs.contiguous().view(-1, vocab_size)
         target = labels.contiguous().view(-1).long()
-        # outputs = torch.max(outputs, dim=-1)[-1].float()
         loss = criterion(outputs, target)
-        print('Epoch: %3d ' % (epoch + 1), '\tCost: {:.5f}'.format(loss))
+        if epoch % 10 == 9:
+            print('Epoch: %3d ' % (epoch + 1), '\tCost: {:.5f}'.format(loss))
         loss.backward()
         optimizer.step()
 
     model.eval()
     predict, _ = model(inputs, labels)
-    predict = predict.data.max(1, keepdim=True)[1]
+    predict = torch.max(predict, dim=-1)[-1]
     print(predict.size())
     print(labels.size())
+    print('predict\n', predict[0])
+    print('labes\n', labels[0])
