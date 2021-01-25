@@ -123,7 +123,7 @@ class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
         self.src_emb = nn.Embedding(src_vocab_size, d_model).to(cur_device)
-        self.pos_emb = nn.Embedding.from_pretrained(get_sinusoid_encoding_table(src_len+1, d_model),freeze=True).to(cur_device)
+        self.pos_emb = nn.Embedding.from_pretrained(get_sinusoid_encoding_table(src_len+1, d_model), freeze=True).to(cur_device)
         self.layers = nn.ModuleList([EncoderLayer() for _ in range(n_layers)])
 
     def forward(self, enc_inputs): # enc_inputs : [batch_size x source_len]
@@ -143,7 +143,6 @@ class Decoder(nn.Module):
         self.layers = nn.ModuleList([DecoderLayer() for _ in range(n_layers)])
 
     def forward(self, dec_inputs, enc_inputs, enc_outputs): # dec_inputs : [batch_size x target_len]
-        print(self.pos_emb(torch.LongTensor([[0, 1, 2, 3, 4]]).to(cur_device)).size())
         dec_outputs = self.tgt_emb(dec_inputs) + self.pos_emb(torch.LongTensor([[0,1,2,3,4]]).to(cur_device))
         dec_self_attn_pad_mask = get_attn_pad_mask(dec_inputs, dec_inputs)
         dec_self_attn_subsequent_mask = get_attn_subsequent_mask(dec_inputs)
@@ -156,6 +155,7 @@ class Decoder(nn.Module):
             dec_outputs, dec_self_attn, dec_enc_attn = layer(dec_outputs, enc_outputs, dec_self_attn_mask, dec_enc_attn_mask)
             dec_self_attns.append(dec_self_attn)
             dec_enc_attns.append(dec_enc_attn)
+            print('Decoder dec_outputs', dec_outputs.size())
         return dec_outputs, dec_self_attns, dec_enc_attns
 
 class Transformer(nn.Module):
@@ -166,8 +166,11 @@ class Transformer(nn.Module):
         self.projection = nn.Linear(d_model, tgt_vocab_size, bias=False).to(cur_device)
     def forward(self, enc_inputs, dec_inputs):
         enc_outputs, enc_self_attns = self.encoder(enc_inputs)
+        print('Transformer enc_outputs:', enc_outputs.size())
         dec_outputs, dec_self_attns, dec_enc_attns = self.decoder(dec_inputs, enc_inputs, enc_outputs)
+        print('Transformer dec_outputs:', dec_outputs.size())
         dec_logits = self.projection(dec_outputs) # dec_logits : [batch_size x src_vocab_size x tgt_vocab_size]
+        print('Transformer dec_logits: ', dec_logits.size())
         return dec_logits.view(-1, dec_logits.size(-1)), enc_self_attns, dec_self_attns, dec_enc_attns
 
 def showgraph(attn):
@@ -192,8 +195,8 @@ if __name__ == '__main__':
     number_dict = {i: w for i, w in enumerate(tgt_vocab)}
     tgt_vocab_size = len(tgt_vocab)
 
-    src_len = 5 # length of source
-    tgt_len = 5 # length of target
+    src_len = 10 # length of source
+    tgt_len = 6 # length of target
 
     d_model = 128  # Embedding Size
     d_ff = 1024  # FeedForward dimension
@@ -210,11 +213,14 @@ if __name__ == '__main__':
     enc_inputs = enc_inputs.to(cur_device)
     dec_inputs = dec_inputs.to(cur_device)
     target_batch = target_batch.to(cur_device)
-    print('enc_inputs', enc_inputs.device)
+    print('main enc_inputs:', enc_inputs.size())
+    print('main dec_inputs:', dec_inputs.size())
 
-    for epoch in range(5):
+    for epoch in range(1):
         optimizer.zero_grad()
         outputs, enc_self_attns, dec_self_attns, dec_enc_attns = model(enc_inputs, dec_inputs)
+        print('outputs', outputs.size())
+        print('target_batch:', target_batch.contiguous().view(-1).size(), target_batch.size())
         loss = criterion(outputs, target_batch.contiguous().view(-1))
         print('Epoch:', '%04d' % (epoch + 1), 'cost =', '{:.6f}'.format(loss))
         loss.backward()

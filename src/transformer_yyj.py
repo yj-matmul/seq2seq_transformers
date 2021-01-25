@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 
-ACT2FN = {'gelu': '', 'relu': nn.ReLU()}
+ACT2FN = {'gelu': nn.GELU(), 'relu': nn.ReLU()}
 
 
 class TransformerConfig():
@@ -146,7 +146,6 @@ class MultiHeadAttention(nn.Module):
         # [batch_size, num_attention_heads, seq_length, seq_length]
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        print(attention_scores.type())
         attention_scores.masked_fill_(attention_mask, -1e9)
 
         # [batch_size, num_attention_heads, seq_length, seq_length]
@@ -217,7 +216,6 @@ class Encoders(nn.Module):
         for i,layer in enumerate(self.layers):
             hidden_states, attention_prob = layer(hidden_states, attention_mask)
             attention_probs.append(attention_prob)
-            print('Encoders', i)
         return hidden_states, attention_probs
 
 
@@ -265,7 +263,6 @@ class Decoders(nn.Module):
                                                                        look_ahead_attention_mask, attention_mask)
             self_attention_probs.append(self_attention_prob)
             encoder_decoder_attention_probs.append(attention_prob)
-            print('Decoders', i)
         return hidden_states, self_attention_probs, encoder_decoder_attention_probs
 
 
@@ -287,8 +284,6 @@ class Transformer(nn.Module):
         encoder_attention_mask = get_attention_mask(encoder_inputs, self.padding_idx)
         decoder_attention_mask = get_attention_mask(decoder_inputs, self.padding_idx)
         look_ahead_attention_mask = get_look_ahead_attention_mask(decoder_inputs).to(self.device)
-        print('decoder mask', decoder_attention_mask.type())
-        print('look ahead mask', look_ahead_attention_mask.type())
         look_ahead_attention_mask = torch.gt((decoder_attention_mask + look_ahead_attention_mask), 0)
 
         # embedding
@@ -307,7 +302,6 @@ class Transformer(nn.Module):
         total_attention_probs['decoder_attention_probs'] = decoder_attention_probs
 
         outputs = self.dense(decoder_outputs)
-        print(decoder_outputs.device)
         outputs = nn.Softmax(dim=-1)(outputs)
         return outputs, total_attention_probs
 
