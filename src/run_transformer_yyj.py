@@ -12,7 +12,7 @@ if __name__ == '__main__':
     inputs = torch.randint(vocab_size, (100, 8), dtype=torch.float, device=config.device)
     labels = torch.randint(vocab_size, (100, 8), dtype=torch.float, device=config.device)
 
-    model = Transformer(config)
+    model = Transformer(config).to(config.device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=5e-5)
 
