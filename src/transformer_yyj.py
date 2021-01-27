@@ -86,8 +86,8 @@ class Embedding(nn.Module):
 
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
         # change data type for word embedding
-        encoder_inputs = encoder_inputs.type(torch.LongTensor).to(self.device)
-        decoder_inputs = decoder_inputs.type(torch.LongTensor).to(self.device)
+        encoder_inputs = encoder_inputs.long()
+        decoder_inputs = decoder_inputs.long()
 
         # encoder, decoder position encoding
         position_ids = torch.arange(encoder_inputs.size()[1], dtype=torch.long, device=self.device)
@@ -272,7 +272,6 @@ class Transformer(nn.Module):
         super(Transformer, self).__init__()
         self.padding_idx = config.padding_idx
         self.share_embeddings = config.share_embeddings
-        self.device = config.device
 
         self.embedding = Embedding(config)
         self.encoders = Encoders(config)

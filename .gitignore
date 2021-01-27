@@ -5,3 +5,6 @@ __pycache__/
 
 # files #
 *.txt
+*.model
+*.vocab
+*.csv
