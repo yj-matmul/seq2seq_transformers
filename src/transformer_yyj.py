@@ -102,7 +102,7 @@ class Embedding(nn.Module):
         # src_word_embeddings, src_word_embeddings : [batch_size, seq_length, hidden_size]
         src_word_embeddings = self.src_word_embeddings(encoder_inputs)
         if self.share_embeddings:
-            trg_word_embeddings = src_word_embeddings
+            trg_word_embeddings = self.src_word_embeddings(decoder_inputs)
         else:
             trg_word_embeddings = self.trg_word_embeddings(decoder_inputs)
 
