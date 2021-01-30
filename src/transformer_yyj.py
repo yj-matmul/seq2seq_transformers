@@ -76,7 +76,6 @@ class Embedding(nn.Module):
         super(Embedding, self).__init__()
         self.padding_idx = config.padding_idx
         self.share_embeddings = config.share_embeddings
-        self.max_seq_length = config.max_seq_length
         self.device = config.device
 
         self.src_word_embeddings = nn.Embedding(config.src_vocab_size, config.hidden_size)
@@ -85,10 +84,6 @@ class Embedding(nn.Module):
         self.position_encodings = nn.Embedding.from_pretrained(position_table, freeze=True)
 
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
-        # change data type for word embedding
-        encoder_inputs = encoder_inputs.long()
-        decoder_inputs = decoder_inputs.long()
-
         # encoder, decoder position encoding
         position_ids = torch.arange(encoder_inputs.size()[1], dtype=torch.long, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand_as(encoder_inputs) + 1
