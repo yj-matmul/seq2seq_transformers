@@ -271,7 +271,7 @@ class Transformer(nn.Module):
         self.embedding = Embedding(config)
         self.encoders = Encoders(config)
         self.decoders = Decoders(config)
-        self.dense = nn.Linear(config.hidden_size, config.trg_vocab_size, bias=False)
+        self.dense = nn.Linear(config.hidden_size, config.trg_vocab_size)
 
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
         # create_mask > [batch_size, seq_length, seq_length]
