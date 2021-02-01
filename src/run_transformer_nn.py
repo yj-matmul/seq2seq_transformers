@@ -17,9 +17,9 @@ def make_feature(src_list, trg_list, tokenizer, config):
     for i in range(len(src_list)):
         src_text = src_list[i]
         trg_text = trg_list[i]
-        encoder_feature = tokenizer.encode_as_ids(src_text) + eos
-        decoder_feature = bos + tokenizer.encode_as_ids(trg_text)
-        trg_feature = tokenizer.encode_as_ids(trg_text) + eos
+        encoder_feature = tokenizer.encode_as_ids(src_text)
+        decoder_feature = tokenizer.encode_as_ids(trg_text)
+        trg_feature = tokenizer.encode_as_ids(trg_text)
         max_len = max(max_len, len(trg_feature))
         encoder_feature += pad * (config.max_seq_length - len(encoder_feature))
         decoder_feature += pad * (config.max_seq_length - len(decoder_feature))
@@ -43,7 +43,8 @@ class CustomDataset(Dataset):
         with open(trg_file_path, 'r', encoding='utf8') as f:
             trg_lines = list(map(lambda x: x.strip('\n'), f.readlines()))
         self.encoder_input, self.decoder_input, self.target = make_feature(src_lines, trg_lines, lm, config)
-
+        print(self.encoder_input.size())
+        print(self.encoder_input.nonzero().size())
     def __len__(self):
         return len(self.encoder_input)
 
@@ -75,9 +76,7 @@ class TransformerNN(nn.Module):
 
 
 if __name__ == '__main__':
-    # inputs = torch.randint(vocab_size, (100, 8), dtype=torch.float, device=config.device)
-    # labels = torch.randint(vocab_size, (100, 8), dtype=torch.float, device=config.device)
-    vocab_file = "./tokenizer/spm_unigram_8000.model"
+    vocab_file = "./tokenizer/spm_unigram_1500.model"
 
     sp = spm.SentencePieceProcessor()
     sp.load(vocab_file)
@@ -87,41 +86,54 @@ if __name__ == '__main__':
     config = TransformerConfig(src_vocab_size=src_vocab_size,
                                trg_vocab_size=trg_vocab_size,
                                device='cuda',
-                               hidden_size=256,
-                               num_attn_head=4,
+                               hidden_size=512,
+                               num_attn_head=8,
                                feed_forward_size=1024,
-                               max_seq_length=64,
+                               max_seq_length=128,
                                share_embeddings=True)
+
     # model = Transformer(config).to(config.device)
     model = TransformerNN(config).to(config.device)
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+    class_weight = torch.tensor([0.001, 0.01, 0.01, 0.01, 0.01])
+    preserve = torch.ones(trg_vocab_size - class_weight.size()[0])
+    class_weight = torch.cat((class_weight, preserve), dim=0).to(config.device)
+    criterion = nn.CrossEntropyLoss(weight=class_weight)
+    # criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=1e-6)
 
-    total_epoch = 20
+    total_epoch = 10
     dataset = CustomDataset(config, sp)
     dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
     # model.load_state_dict(torch.load('./model_weight/transformerNN_20'))
     model.train()
     for epoch in range(total_epoch):
+        total_loss = 0
         for iteration, datas in enumerate(dataloader):
             encoder_inputs, decoder_inputs, targets = datas
             optimizer.zero_grad()
             logits = model(encoder_inputs, decoder_inputs)
+            temp = torch.max(logits, dim=-1)[-1]
+            # print('logit', temp[1])
+            # print('tar', targets[0])
             logits = logits.contiguous().view(-1, trg_vocab_size)
             targets = targets.contiguous().view(-1)
-            indices = targets.nonzero().squeeze(1)
-            logits2 = logits.index_select(0, indices)
-            targets2 = targets.index_select(0, indices)
-            loss = (criterion(logits, targets) / 10) + (criterion(logits2, targets2) * 10)
+            # indices = targets.nonzero().squeeze(1)
+            # logits2 = logits.index_select(0, indices)
+            # targets2 = targets.index_select(0, indices)
+            # loss = (criterion(logits, targets) / 10) + (criterion(logits2, targets2) * 10)
+            loss = criterion(logits, targets)
             loss.backward()
+            # print(loss)
             nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             optimizer.step()
+            total_loss += loss
             # if (iteration + 1) % 50 == 0:
             #     print('Iteration: %3d \t' % (iteration + 1), 'Cost: {:.5f}'.format(loss))
         # break
         # if (epoch + 1) % 5 == 0:
-        print('Epoch: %3d \t' % (epoch + 1), 'Cost: {:.5f}'.format(loss))
+        print('Epoch: %3d\t' % (epoch + 1), 'Cost: {:.5f}'.format(total_loss/(iteration + 1)))
+        total_loss = 0
         # if (epoch + 1) % 100 == 0:
     model_path = './model_weight/transformerNN_%d' % (epoch + 1)
     torch.save(model.state_dict(), model_path)
