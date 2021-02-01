@@ -7,3 +7,4 @@ src/model_weight/
 # files #
 *.txt
 *.csv
+*.temp
