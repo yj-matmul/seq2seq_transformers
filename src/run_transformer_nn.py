@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformer_yyj import Transformer, TransformerConfig, Embedding
 from torch import optim
 import sentencepiece as spm
+from transformers import ElectraModel, ElectraTokenizer
 import numpy as np
 
 
@@ -43,8 +44,8 @@ class CustomDataset(Dataset):
         with open(trg_file_path, 'r', encoding='utf8') as f:
             trg_lines = list(map(lambda x: x.strip('\n'), f.readlines()))
         self.encoder_input, self.decoder_input, self.target = make_feature(src_lines, trg_lines, lm, config)
-        print(self.encoder_input.size())
-        print(self.encoder_input.nonzero().size())
+        # print(self.encoder_input.size())
+        # print(self.encoder_input.nonzero().size())
     def __len__(self):
         return len(self.encoder_input)
 
@@ -76,12 +77,14 @@ class TransformerNN(nn.Module):
 
 
 if __name__ == '__main__':
-    vocab_file = "./tokenizer/spm_unigram_1500.model"
-
-    sp = spm.SentencePieceProcessor()
-    sp.load(vocab_file)
-    src_vocab_size = sp.vocab_size()
-    trg_vocab_size = sp.vocab_size()
+    # vocab_file = "./tokenizer/spm_unigram_1500.model"
+    #
+    # sp = spm.SentencePieceProcessor()
+    # sp.load(vocab_file)
+    # src_vocab_size = sp.vocab_size()
+    # trg_vocab_size = sp.vocab_size()
+    electra = ElectraModel.from_pretrained("monologg/koelectra-small-v3-discriminator")  # KoELECTRA-Small-v3
+    tokenizer = ElectraTokenizer.from_pretrained("monologg/koelectra-base-v3-discriminator")
 
     config = TransformerConfig(src_vocab_size=src_vocab_size,
                                trg_vocab_size=trg_vocab_size,
@@ -140,7 +143,7 @@ if __name__ == '__main__':
 
     # model.load_state_dict(torch.load('./model_weight/transformer_500'))
     model.eval()
-    sample_encoder_input = ['나는 안녕하세요 1+1 이벤트 진행 중이다, 가격 1300원이야.',
+    sample_encoder_input = ['현재 짜파게티는 1+1 이벤트 진행 중이다, 가격 1300원이야.',
                             '가랑비에 옷 젖는 줄 모른다.',
                             '고객님, 현재 짜파게티는 1+1 상품으로 이벤트가 진행중이니 살펴보고 가세요.']
     sample_decoder_input = [''] * len(sample_encoder_input)
