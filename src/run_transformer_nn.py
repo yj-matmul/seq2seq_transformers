@@ -77,12 +77,12 @@ class TransformerNN(nn.Module):
 
 
 if __name__ == '__main__':
-    # vocab_file = "./tokenizer/spm_unigram_1500.model"
-    #
-    # sp = spm.SentencePieceProcessor()
-    # sp.load(vocab_file)
-    # src_vocab_size = sp.vocab_size()
-    # trg_vocab_size = sp.vocab_size()
+    vocab_file = "./tokenizer/spm_unigram_1500.model"
+
+    sp = spm.SentencePieceProcessor()
+    sp.load(vocab_file)
+    src_vocab_size = sp.vocab_size()
+    trg_vocab_size = sp.vocab_size()
     electra = ElectraModel.from_pretrained("monologg/koelectra-small-v3-discriminator")  # KoELECTRA-Small-v3
     tokenizer = ElectraTokenizer.from_pretrained("monologg/koelectra-base-v3-discriminator")
 
