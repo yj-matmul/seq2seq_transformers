@@ -6,6 +6,7 @@ import torch.nn as nn
 
 
 ACT2FN = {'gelu': nn.GELU(), 'relu': nn.ReLU()}
+j = -1
 
 
 class TransformerConfig:
@@ -147,6 +148,7 @@ class MultiHeadAttention(nn.Module):
 
         # [batch_size, num_attn_heads, seq_length, seq_length]
         attn_probs = nn.Softmax(dim=-1)(attn_scores)
+        # print('attn_prob', attn_probs[0][0][j])
         attn_probs = self.dropout1(attn_probs)
 
         # [batch_size, num_attn_heads, seq_length, attn_head_size]
@@ -279,6 +281,10 @@ class Transformer(nn.Module):
         decoder_attn_mask = get_attn_mask(decoder_inputs, self.padding_idx)
         look_ahead_attn_mask = get_look_ahead_attn_mask(decoder_inputs)
         look_ahead_attn_mask = torch.gt((decoder_attn_mask + look_ahead_attn_mask), 0)
+        # print('input:', encoder_inputs[0])
+        # print('encoder mask:', encoder_attn_mask[0][j])
+        # print('decoder mask:', decoder_attn_mask[0][j])
+        # print('look_ahead_mask:', look_ahead_attn_mask[0][j])
 
         # embedding
         encoder_embeddings, decoder_embeddings = self.embedding(encoder_inputs, decoder_inputs)

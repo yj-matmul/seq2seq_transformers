@@ -57,19 +57,24 @@ class CustomDataset(Dataset):
 
 
 class Spell2Pronunciation(nn.Module):
-    def __init__(self):
+    def __init__(self, config):
         super(Spell2Pronunciation, self).__init__()
         # KoELECTRA-Small-v3
         self.encoders = ElectraModel.from_pretrained("monologg/koelectra-small-v3-discriminator")
+        self.embedding = self.encoders.get_input_embeddings()
+        self.embedding_projection = nn.Linear(128, config.hidden_size)
         self.decoders = Decoders(config)
         self.dense = nn.Linear(config.hidden_size, config.trg_vocab_size)
+
+        self.padding_idx = config.padding_idx
 
     def forward(self, encoder_iuputs, decoder_inputs):
         decoder_attn_mask = get_attn_mask(decoder_inputs, self.padding_idx)
         look_ahead_attn_mask = get_look_ahead_attn_mask(decoder_inputs)
         look_ahead_attn_mask = torch.gt((decoder_attn_mask + look_ahead_attn_mask), 0)
-        encoder_outputs = self.encoders(encoder_iuputs).last_hidden_states
-        decoder_outputs, _, _ = self.decoders(encoder_outputs, decoder_inputs, look_ahead_attn_mask, decoder_attn_mask)
+        decoder_embeddings = self.embedding_projection(self.embedding(decoder_inputs))
+        encoder_outputs = self.encoders(encoder_iuputs).last_hidden_state
+        decoder_outputs, _, _ = self.decoders(encoder_outputs, decoder_embeddings, look_ahead_attn_mask, decoder_attn_mask)
         model_output = self.dense(decoder_outputs)
         return model_output
 
@@ -89,15 +94,16 @@ if __name__ == '__main__':
                                feed_forward_size=1024,
                                max_seq_length=512,
                                share_embeddings=True)
-    model = Transformer(config).to(config.device)
+    model = Spell2Pronunciation(config).to(config.device)
 
-    class_weight = torch.tensor([0.001, 0.01, 0.01, 0.01])
+    class_weight = torch.tensor([1e-6, 0.01, 0.01, 0.01])
     preserve = torch.ones(trg_vocab_size - class_weight.size()[0])
     class_weight = torch.cat((class_weight, preserve), dim=0).to(config.device)
     criterion = nn.CrossEntropyLoss(weight=class_weight)
-    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+    # criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    total_epoch = 1
+    total_epoch = 10
     dataset = CustomDataset(config, tokenizer)
     dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
 
@@ -107,7 +113,7 @@ if __name__ == '__main__':
         for iteration, datas in enumerate(dataloader):
             encoder_inputs, decoder_inputs, targets = datas
             optimizer.zero_grad()
-            logits, _ = model(encoder_inputs, decoder_inputs)
+            logits = model(encoder_inputs, decoder_inputs)
             logits = logits.contiguous().view(-1, trg_vocab_size)
             targets = targets.contiguous().view(-1)
             # indices = targets.nonzero().squeeze(1)
@@ -134,7 +140,7 @@ if __name__ == '__main__':
     sample_decoder_input = [''] * len(sample_encoder_input)
     sample_encoder_input, sample_decoder_input, _ = make_feature(sample_encoder_input, sample_decoder_input,
                                                                  tokenizer, config)
-    predicts, _ = model(sample_encoder_input, sample_decoder_input)
+    predicts = model(sample_encoder_input, sample_decoder_input)
     print(predicts.size())
     predicts = torch.max(predicts, dim=-1)[-1].long().to('cpu')
 
