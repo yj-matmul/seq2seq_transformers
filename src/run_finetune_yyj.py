@@ -106,20 +106,25 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss(ignore_index=0)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    weights = glob.glob('./model_weight/transformer_*')
-    last_epoch = int(weights[-1].split('_')[-1])
-    weight_path = weights[-1].replace('\\', '/')
-    print('weight info of last epoch', weight_path)
-    model.load_state_dict(torch.load(weight_path))
-    plus_epoch = 10
-    total_epoch = last_epoch + plus_epoch
+    train_continue = True
+    if train_continue:
+        weights = glob.glob('./model_weight/transformer_*')
+        last_epoch = int(weights[-1].split('_')[-1])
+        weight_path = weights[-1].replace('\\', '/')
+        print('weight info of last epoch', weight_path)
+        model.load_state_dict(torch.load(weight_path))
+        plus_epoch = 10
+        total_epoch = last_epoch + plus_epoch
+    else:
+        total_epoch = 10
+
     dataset = CustomDataset(config, tokenizer)
-    dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
+    data_loader = DataLoader(dataset, batch_size=8, shuffle=True)
 
     model.train()
     for epoch in range(total_epoch):
         total_loss = 0
-        for iteration, datas in enumerate(dataloader):
+        for iteration, datas in enumerate(data_loader):
             encoder_inputs, decoder_inputs, targets = datas
             optimizer.zero_grad()
             logits = model(encoder_inputs, decoder_inputs)
