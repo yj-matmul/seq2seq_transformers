@@ -6,6 +6,7 @@ from torch import optim
 import sentencepiece as spm
 from transformers import ElectraModel, ElectraTokenizer
 import glob
+from utils import text_normalization
 
 
 # this is only used with version of sentencepiece tokenizer
@@ -18,8 +19,8 @@ def make_feature(src_list, trg_list, tokenizer, config):
     trg_features = []
     max_len = 0
     for i in range(len(src_list)):
-        src_text = tokenizer.tokenize(src_list[i])
-        trg_text = tokenizer.tokenize(trg_list[i])
+        src_text = tokenizer.tokenize(text_normalization(src_list[i]))
+        trg_text = tokenizer.tokenize(text_normalization(trg_list[i]))
         encoder_feature = tokenizer.convert_tokens_to_ids(src_text)
         decoder_feature = cls + tokenizer.convert_tokens_to_ids(trg_text)
         trg_feature = tokenizer.convert_tokens_to_ids(trg_text) + sep
@@ -106,9 +107,9 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss(ignore_index=0)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    train_continue = True
+    train_continue = False
     if train_continue:
-        weights = glob.glob('./model_weight/transformer_*')
+        weights = glob.glob('./model_weight/transformer_normal_*')
         last_epoch = int(weights[-1].split('_')[-1])
         weight_path = weights[-1].replace('\\', '/')
         print('weight info of last epoch', weight_path)
@@ -116,13 +117,14 @@ if __name__ == '__main__':
         plus_epoch = 10
         total_epoch = last_epoch + plus_epoch
     else:
-        total_epoch = 10
+        plus_epoch = 10
+        total_epoch = plus_epoch
 
     dataset = CustomDataset(config, tokenizer)
     data_loader = DataLoader(dataset, batch_size=8, shuffle=True)
 
     model.train()
-    for epoch in range(total_epoch):
+    for epoch in range(plus_epoch):
         total_loss = 0
         for iteration, datas in enumerate(data_loader):
             encoder_inputs, decoder_inputs, targets = datas
@@ -143,14 +145,15 @@ if __name__ == '__main__':
         # if (epoch + 1) % 5 == 0:
         print('Epoch: %3d\t' % (epoch + 1), 'Cost: {:.5f}'.format(total_loss/(iteration + 1)))
         # if (epoch + 1) % 100 == 0:
-    model_path = './model_weight/transformer_%d' % (epoch + 1)
+    model_path = './model_weight/transformer_normal_%d' % total_epoch
     torch.save(model.state_dict(), model_path)
 
     # model.load_state_dict(torch.load('./model_weight/transformer_10'))
     model.eval()
     sample_encoder_input = ['나는 안녕하세요 1+1 이벤트 진행 중이다, 가격 1300원이야.',
                             '가랑비에 옷 젖는 줄 모른다.',
-                            '고객님, 현재 짜파게티는 1+1 상품으로 이벤트가 진행중이니 살펴보고 가세요.']
+                            '고객님, 현재 짜파게티는 1+1 상품으로 이벤트가 진행중이니 살펴보고 가세요.',
+                            '확인해 드릴게요, 세금을 포함해서 102만 원이라고 나오네요.']
     sample_decoder_input = [''] * len(sample_encoder_input)
     sample_encoder_input, sample_decoder_input, _ = make_feature(sample_encoder_input, sample_decoder_input,
                                                                  tokenizer, config)
