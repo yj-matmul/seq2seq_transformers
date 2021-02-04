@@ -19,6 +19,8 @@ def make_feature(src_list, trg_list, tokenizer, config):
     trg_features = []
     max_len = 0
     for i in range(len(src_list)):
+        # src_text = tokenizer.tokenize(src_list[i])
+        # trg_text = tokenizer.tokenize(trg_list[i])
         src_text = tokenizer.tokenize(text_normalization(src_list[i]))
         trg_text = tokenizer.tokenize(text_normalization(trg_list[i]))
         encoder_feature = tokenizer.convert_tokens_to_ids(src_text)
@@ -106,8 +108,11 @@ if __name__ == '__main__':
     # criterion = nn.CrossEntropyLoss(weight=class_weight)
     criterion = nn.CrossEntropyLoss(ignore_index=0)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
+                                                     mode='min',
+                                                     patience=2)
 
-    train_continue = False
+    train_continue = True
     if train_continue:
         weights = glob.glob('./model_weight/transformer_normal_*')
         last_epoch = int(weights[-1].split('_')[-1])
@@ -137,13 +142,15 @@ if __name__ == '__main__':
             # targets = targets.index_select(0, indices)
             loss = criterion(logits, targets)
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             optimizer.step()
             total_loss += loss
+        scheduler.step(total_loss)
             # if (iteration + 1) % 50 == 0:
             #     print('Iteration: %3d \t' % (iteration + 1), 'Cost: {:.5f}'.format(loss))
         # break
         # if (epoch + 1) % 5 == 0:
-        print('Epoch: %3d\t' % (epoch + 1), 'Cost: {:.5f}'.format(total_loss/(iteration + 1)))
+        print('Epoch: %3d\t' % (last_epoch + epoch + 1), 'Cost: {:.5f}'.format(total_loss/(iteration + 1)))
         # if (epoch + 1) % 100 == 0:
     model_path = './model_weight/transformer_normal_%d' % total_epoch
     torch.save(model.state_dict(), model_path)
