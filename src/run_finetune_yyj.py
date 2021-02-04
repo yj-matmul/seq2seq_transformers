@@ -5,6 +5,7 @@ from transformer_yyj import Transformer, TransformerConfig, Decoders, get_attn_m
 from torch import optim
 import sentencepiece as spm
 from transformers import ElectraModel, ElectraTokenizer
+import glob
 
 
 # this is only used with version of sentencepiece tokenizer
@@ -23,13 +24,13 @@ def make_feature(src_list, trg_list, tokenizer, config):
         decoder_feature = cls + tokenizer.convert_tokens_to_ids(trg_text)
         trg_feature = tokenizer.convert_tokens_to_ids(trg_text) + sep
         max_len = max(max_len, len(trg_feature))
-        encoder_feature += pad * (config.max_seq_length - len(encoder_feature))
-        decoder_feature += pad * (config.max_seq_length - len(decoder_feature))
-        trg_feature += pad * (config.max_seq_length - len(trg_feature))
+        encoder_feature += pad * (config.encoder_max_seq_length - len(encoder_feature))
+        decoder_feature += pad * (config.decoder_max_seq_length - len(decoder_feature))
+        trg_feature += pad * (config.decoder_max_seq_length - len(trg_feature))
         encoder_features.append(encoder_feature)
         decoder_features.append(decoder_feature)
         trg_features.append(trg_feature)
-    print(max_len)
+    print('decoder 최대 길이:', max_len)
     encoder_features = torch.LongTensor(encoder_features).to(config.device)
     decoder_features = torch.LongTensor(decoder_features).to(config.device)
     trg_features = torch.LongTensor(trg_features).to(config.device)
@@ -69,9 +70,10 @@ class Spell2Pronunciation(nn.Module):
         self.padding_idx = config.padding_idx
 
     def forward(self, encoder_iuputs, decoder_inputs):
-        decoder_attn_mask = get_attn_mask(decoder_inputs, self.padding_idx)
+        decoder_attn_mask = get_attn_mask(decoder_inputs, decoder_inputs, self.padding_idx)
         look_ahead_attn_mask = get_look_ahead_attn_mask(decoder_inputs)
         look_ahead_attn_mask = torch.gt((decoder_attn_mask + look_ahead_attn_mask), 0)
+        decoder_attn_mask = get_attn_mask(decoder_inputs, encoder_iuputs, self.padding_idx)
         decoder_embeddings = self.embedding_projection(self.embedding(decoder_inputs))
         encoder_outputs = self.encoders(encoder_iuputs).last_hidden_state
         decoder_outputs, _, _ = self.decoders(encoder_outputs, decoder_embeddings, look_ahead_attn_mask, decoder_attn_mask)
@@ -92,18 +94,25 @@ if __name__ == '__main__':
                                hidden_size=256,
                                num_attn_head=4,
                                feed_forward_size=1024,
-                               max_seq_length=512,
+                               encoder_max_seq_length=512,
+                               decoder_max_seq_length=128,
                                share_embeddings=True)
     model = Spell2Pronunciation(config).to(config.device)
 
-    class_weight = torch.tensor([1e-6, 0.01, 0.01, 0.01])
-    preserve = torch.ones(trg_vocab_size - class_weight.size()[0])
-    class_weight = torch.cat((class_weight, preserve), dim=0).to(config.device)
-    criterion = nn.CrossEntropyLoss(weight=class_weight)
-    # criterion = nn.CrossEntropyLoss()
+    # class_weight = torch.tensor([1e-6, 0.01, 0.01, 0.01])
+    # preserve = torch.ones(trg_vocab_size - class_weight.size()[0])
+    # class_weight = torch.cat((class_weight, preserve), dim=0).to(config.device)
+    # criterion = nn.CrossEntropyLoss(weight=class_weight)
+    criterion = nn.CrossEntropyLoss(ignore_index=0)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    total_epoch = 10
+    weights = glob.glob('./model_weight/transformer_*')
+    last_epoch = int(weights[-1].split('_')[-1])
+    weight_path = weights[-1].replace('\\', '/')
+    print('weight info of last epoch', weight_path)
+    model.load_state_dict(torch.load(weight_path))
+    plus_epoch = 10
+    total_epoch = last_epoch + plus_epoch
     dataset = CustomDataset(config, tokenizer)
     dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
 

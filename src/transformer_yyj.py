@@ -23,7 +23,8 @@ class TransformerConfig:
                  share_embeddings=False,
                  hidden_dropout_prob=0.1,
                  attn_dropout_prob=0.1,
-                 max_seq_length=512,
+                 encoder_max_seq_length=512,
+                 decoder_max_seq_length=512,
                  initializer_range=0.02,
                  layer_norm_eps=1e-12):
         self.src_vocab_size = src_vocab_size
@@ -38,7 +39,8 @@ class TransformerConfig:
         self.share_embeddings = share_embeddings
         self.hidden_dropout_prob = hidden_dropout_prob
         self.attn_dropout_prob = attn_dropout_prob
-        self.max_seq_length = max_seq_length
+        self.encoder_max_seq_length = encoder_max_seq_length
+        self.decoder_max_seq_length = decoder_max_seq_length
         self.initializer_range = initializer_range
         self.layer_norm_eps = layer_norm_eps
 
@@ -58,10 +60,11 @@ def get_positional_encoding_table(seq_length, hidden_size):
     return torch.FloatTensor(sinusoid_table)
 
 
-def get_attn_mask(input_ids, padding_idx):     # input_ids : [batch_size, seq_length]
-    seq_length = input_ids.size()[1]
+def get_attn_mask(q_ids, k_ids, padding_idx):     # input_ids : [batch_size, seq_length]
+    q_seq_length = q_ids.size()[1]
+    k_seq_length = k_ids.size()[1]
     # attn_mask : [batch_size, seq_length, seq_length]
-    attn_mask = input_ids.eq(padding_idx).unsqueeze(1).expand(-1, seq_length, seq_length)
+    attn_mask = k_ids.eq(padding_idx).unsqueeze(1).expand(-1, q_seq_length, k_seq_length)
     return attn_mask
 
 
@@ -81,7 +84,8 @@ class Embedding(nn.Module):
 
         self.src_word_embeddings = nn.Embedding(config.src_vocab_size, config.hidden_size)
         self.trg_word_embeddings = nn.Embedding(config.trg_vocab_size, config.hidden_size)
-        position_table = get_positional_encoding_table(config.max_seq_length + 1, config.hidden_size)
+        # need to split encoder position table and decoder position table
+        position_table = get_positional_encoding_table(config.encoder_max_seq_length + 1, config.hidden_size)
         self.position_encodings = nn.Embedding.from_pretrained(position_table, freeze=True)
 
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
@@ -277,10 +281,11 @@ class Transformer(nn.Module):
 
     def forward(self, encoder_inputs, decoder_inputs):  # [batch_size, seq_length]
         # create_mask > [batch_size, seq_length, seq_length]
-        encoder_attn_mask = get_attn_mask(encoder_inputs, self.padding_idx)
-        decoder_attn_mask = get_attn_mask(decoder_inputs, self.padding_idx)
+        encoder_attn_mask = get_attn_mask(encoder_inputs, encoder_inputs, self.padding_idx)
+        decoder_attn_mask = get_attn_mask(decoder_inputs, decoder_inputs, self.padding_idx)
         look_ahead_attn_mask = get_look_ahead_attn_mask(decoder_inputs)
         look_ahead_attn_mask = torch.gt((decoder_attn_mask + look_ahead_attn_mask), 0)
+        decoder_attn_mask = get_attn_mask(decoder_inputs, encoder_inputs, self.padding_idx)
         # print('input:', encoder_inputs[0])
         # print('encoder mask:', encoder_attn_mask[0][j])
         # print('decoder mask:', decoder_attn_mask[0][j])
