@@ -12,8 +12,8 @@ from utils import text_normalization
 # this is only used with version of sentencepiece tokenizer
 def make_feature(src_list, trg_list, tokenizer, config):
     pad = tokenizer.convert_tokens_to_ids(['[PAD]'])
-    cls = tokenizer.convert_tokens_to_ids(['[CLS]'])
-    sep = tokenizer.convert_tokens_to_ids(['[SEP]'])
+    sos = tokenizer.convert_tokens_to_ids(['[unused0]'])
+    eos = tokenizer.convert_tokens_to_ids(['[unused1]'])
     encoder_features = []
     decoder_features = []
     trg_features = []
@@ -23,9 +23,10 @@ def make_feature(src_list, trg_list, tokenizer, config):
         # trg_text = tokenizer.tokenize(trg_list[i])
         src_text = tokenizer.tokenize(text_normalization(src_list[i]))
         trg_text = tokenizer.tokenize(text_normalization(trg_list[i]))
-        encoder_feature = tokenizer.convert_tokens_to_ids(src_text)
-        decoder_feature = cls + tokenizer.convert_tokens_to_ids(trg_text)
-        trg_feature = tokenizer.convert_tokens_to_ids(trg_text) + sep
+        # encoder_feature = tokenizer.convert_tokens_to_ids(src_text)
+        encoder_feature = sos + tokenizer.convert_tokens_to_ids(src_text) + eos
+        decoder_feature = sos + tokenizer.convert_tokens_to_ids(trg_text)
+        trg_feature = tokenizer.convert_tokens_to_ids(trg_text) + eos
         max_len = max(max_len, len(trg_feature))
         encoder_feature += pad * (config.encoder_max_seq_length - len(encoder_feature))
         decoder_feature += pad * (config.decoder_max_seq_length - len(decoder_feature))
@@ -98,7 +99,7 @@ if __name__ == '__main__':
                                num_attn_head=4,
                                feed_forward_size=1024,
                                encoder_max_seq_length=512,
-                               decoder_max_seq_length=128,
+                               decoder_max_seq_length=64,
                                share_embeddings=True)
     model = Spell2Pronunciation(config).to(config.device)
 
@@ -107,22 +108,23 @@ if __name__ == '__main__':
     # class_weight = torch.cat((class_weight, preserve), dim=0).to(config.device)
     # criterion = nn.CrossEntropyLoss(weight=class_weight)
     criterion = nn.CrossEntropyLoss(ignore_index=0)
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
                                                      mode='min',
                                                      patience=2)
 
-    train_continue = True
+    train_continue = False
     if train_continue:
         weights = glob.glob('./model_weight/transformer_normal_*')
         last_epoch = int(weights[-1].split('_')[-1])
         weight_path = weights[-1].replace('\\', '/')
         print('weight info of last epoch', weight_path)
         model.load_state_dict(torch.load(weight_path))
-        plus_epoch = 10
+        plus_epoch = 40
         total_epoch = last_epoch + plus_epoch
     else:
-        plus_epoch = 10
+        last_epoch = 0
+        plus_epoch = 200
         total_epoch = plus_epoch
 
     dataset = CustomDataset(config, tokenizer)

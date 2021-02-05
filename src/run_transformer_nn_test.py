@@ -70,9 +70,9 @@ if __name__ == '__main__':
 
     sp = spm.SentencePieceProcessor()
     sp.load(vocab_file)
-    vocab_size = 1000
-    seq_len = 30
-    num_data = 100
+    vocab_size = 100
+    seq_len = 100
+    num_data = 1000
 
     config = TransformerConfig(src_vocab_size=vocab_size,
                                trg_vocab_size=vocab_size,
@@ -80,12 +80,13 @@ if __name__ == '__main__':
                                hidden_size=512,
                                num_attn_head=8,
                                feed_forward_size=2048,
-                               max_seq_length=128,
+                               encoder_max_seq_length=128,
+                               decoder_max_seq_length=128,
                                share_embeddings=True)
 
     inputs = torch.randint(vocab_size, (num_data, seq_len), dtype=torch.long, device=config.device)
     labels = torch.randint(vocab_size, (num_data, seq_len), dtype=torch.long, device=config.device)
-    zero = torch.zeros(num_data, config.max_seq_length - inputs.size()[1], dtype=torch.long, device=config.device)
+    zero = torch.zeros(num_data, config.encoder_max_seq_length - inputs.size()[1], dtype=torch.long, device=config.device)
     inputs = torch.cat((inputs, zero), dim=1)
     labels = torch.cat((labels, zero), dim=1)
     print(labels.size())
