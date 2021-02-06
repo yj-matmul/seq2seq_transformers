@@ -108,7 +108,7 @@ if __name__ == '__main__':
     # class_weight = torch.cat((class_weight, preserve), dim=0).to(config.device)
     # criterion = nn.CrossEntropyLoss(weight=class_weight)
     criterion = nn.CrossEntropyLoss(ignore_index=0)
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
                                                      mode='min',
                                                      patience=2)
@@ -128,7 +128,7 @@ if __name__ == '__main__':
         total_epoch = plus_epoch
 
     dataset = CustomDataset(config, tokenizer)
-    data_loader = DataLoader(dataset, batch_size=8, shuffle=True)
+    data_loader = DataLoader(dataset, batch_size=16, shuffle=True)
 
     model.train()
     for epoch in range(plus_epoch):
