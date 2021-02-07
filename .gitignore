@@ -3,6 +3,7 @@
 practice_pytorch/.ipynb_checkpoints/
 __pycache__/
 src/model_weight/
+src/example/
 
 # files #
 *.txt
