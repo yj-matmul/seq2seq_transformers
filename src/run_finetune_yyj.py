@@ -24,7 +24,7 @@ def make_feature(src_list, trg_list, tokenizer, config):
         src_text = tokenizer.tokenize(text_normalization(src_list[i]))
         trg_text = tokenizer.tokenize(text_normalization(trg_list[i]))
         # encoder_feature = tokenizer.convert_tokens_to_ids(src_text)
-        encoder_feature = sos + tokenizer.convert_tokens_to_ids(src_text) + eos
+        encoder_feature = tokenizer.convert_tokens_to_ids(src_text)
         decoder_feature = sos + tokenizer.convert_tokens_to_ids(trg_text)
         trg_feature = tokenizer.convert_tokens_to_ids(trg_text) + eos
         max_len = max(max_len, len(trg_feature))
@@ -108,7 +108,7 @@ if __name__ == '__main__':
     # class_weight = torch.cat((class_weight, preserve), dim=0).to(config.device)
     # criterion = nn.CrossEntropyLoss(weight=class_weight)
     criterion = nn.CrossEntropyLoss(ignore_index=0)
-    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
                                                      mode='min',
                                                      patience=2)
@@ -124,7 +124,7 @@ if __name__ == '__main__':
         total_epoch = last_epoch + plus_epoch
     else:
         last_epoch = 0
-        plus_epoch = 200
+        plus_epoch = 20
         total_epoch = plus_epoch
 
     dataset = CustomDataset(config, tokenizer)
@@ -159,13 +159,21 @@ if __name__ == '__main__':
 
     # model.load_state_dict(torch.load('./model_weight/transformer_10'))
     model.eval()
-    sample_encoder_input = ['나는 안녕하세요 1+1 이벤트 진행 중이다, 가격 1300원이야.',
-                            '가랑비에 옷 젖는 줄 모른다.',
-                            '고객님, 현재 짜파게티는 1+1 상품으로 이벤트가 진행중이니 살펴보고 가세요.',
-                            '확인해 드릴게요, 세금을 포함해서 102만 원이라고 나오네요.']
+    # sample_encoder_input = ['나는 안녕하세요 1+1 이벤트 진행 중이다, 가격 1300원이야.',
+    #                         '가랑비에 옷 젖는 줄 모른다.',
+    #                         '고객님, 현재 짜파게티는 1+1 상품으로 이벤트가 진행중이니 살펴보고 가세요.',
+    #                         '확인해 드릴게요, 세금을 포함해서 102만 원이라고 나오네요.']
+    sample_encoder_input = ['고객님, 현재 짜파게티는 1+1 상품으로 이벤트가 진행중이니 살펴보고 가세요.']
     sample_decoder_input = [''] * len(sample_encoder_input)
     sample_encoder_input, sample_decoder_input, _ = make_feature(sample_encoder_input, sample_decoder_input,
                                                                  tokenizer, config)
+
+    sample_output = torch.zeros(1, config.decoder_max_seq_length, dtype=torch.long, device=config.device)
+
+    encoder_output = model.encoders()
+    for i in range(config.decoder_max_seq_length):
+        pass
+
     predicts = model(sample_encoder_input, sample_decoder_input)
     print(predicts.size())
     predicts = torch.max(predicts, dim=-1)[-1].long().to('cpu')
