@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-from transformer_yyj import Transformer, TransformerConfig, Decoders, get_attn_mask, get_look_ahead_attn_mask
+from transformer_yyj import Transformer, TransformerConfig, Decoders, get_pad_mask, get_look_ahead_mask
 from torch import optim
 import sentencepiece as spm
 from transformers import ElectraModel, ElectraTokenizer
@@ -74,10 +74,10 @@ class Spell2Pronunciation(nn.Module):
         self.padding_idx = config.padding_idx
 
     def forward(self, encoder_iuputs, decoder_inputs):
-        decoder_attn_mask = get_attn_mask(decoder_inputs, decoder_inputs, self.padding_idx)
-        look_ahead_attn_mask = get_look_ahead_attn_mask(decoder_inputs)
+        decoder_attn_mask = get_pad_mask(decoder_inputs, decoder_inputs, self.padding_idx)
+        look_ahead_attn_mask = get_look_ahead_mask(decoder_inputs)
         look_ahead_attn_mask = torch.gt((decoder_attn_mask + look_ahead_attn_mask), 0)
-        decoder_attn_mask = get_attn_mask(decoder_inputs, encoder_iuputs, self.padding_idx)
+        decoder_attn_mask = get_pad_mask(decoder_inputs, encoder_iuputs, self.padding_idx)
         decoder_embeddings = self.embedding_projection(self.embedding(decoder_inputs))
         encoder_outputs = self.encoders(encoder_iuputs).last_hidden_state
         decoder_outputs, _, _ = self.decoders(encoder_outputs, decoder_embeddings, look_ahead_attn_mask, decoder_attn_mask)
@@ -177,10 +177,10 @@ if __name__ == '__main__':
     print('next symbol:', next_symbol)
     for i in range(config.decoder_max_seq_length):
         sample_output[0][i] = next_symbol
-        decoder_attn_mask = get_attn_mask(sample_output, sample_output, config.padding_idx)
-        look_ahead_attn_mask = get_look_ahead_attn_mask(sample_output)
+        decoder_attn_mask = get_pad_mask(sample_output, sample_output, config.padding_idx)
+        look_ahead_attn_mask = get_look_ahead_mask(sample_output)
         look_ahead_attn_mask = torch.gt((decoder_attn_mask + look_ahead_attn_mask), 0)
-        decoder_attn_mask = get_attn_mask(sample_output, sample_encoder_input, config.padding_idx)
+        decoder_attn_mask = get_pad_mask(sample_output, sample_encoder_input, config.padding_idx)
         sample_embedding = model.embedding_projection(model.embedding(sample_output))
         prob, _, _ = model.decoders(encoder_output, sample_embedding, look_ahead_attn_mask, decoder_attn_mask)
         prob = model.dense(prob)
