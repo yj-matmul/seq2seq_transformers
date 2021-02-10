@@ -65,7 +65,7 @@ if __name__ == '__main__':
         for iteration, data in enumerate(data_loader):
             encoder_inputs, decoder_inputs, targets = data
             optimizer.zero_grad()
-            logits, _ = model(encoder_inputs, encoder_inputs)
+            logits, _ = model(encoder_inputs, decoder_inputs)
             logits = logits.contiguous().view(-1, trg_vocab_size)
             targets = targets.contiguous().view(-1)
             loss = criterion(logits, targets)

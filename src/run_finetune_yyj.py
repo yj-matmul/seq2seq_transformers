@@ -98,8 +98,8 @@ if __name__ == '__main__':
                                hidden_size=256,
                                num_attn_head=4,
                                feed_forward_size=1024,
-                               encoder_max_seq_length=512,
-                               decoder_max_seq_length=64,
+                               enc_max_seq_length=512,
+                               dec_max_seq_length=64,
                                share_embeddings=True)
     model = Spell2Pronunciation(config).to(config.device)
 

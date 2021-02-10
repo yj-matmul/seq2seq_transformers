@@ -31,7 +31,7 @@ def text2ids(text_list, tokenizer, config, mode=str, use_test_normalization=Fals
         tokens = tokenizer.tokenize(text)
         ids = tokenizer.convert_tokens_to_ids(tokens)
         max_length = max(max_length, len(ids) + 1)  # plus one for special token
-        if mode == 'target':
+        if mode == 'encoder':
             ids += pad * (config.enc_max_seq_length - len(ids))
         elif mode == 'decoder':
             ids = sos + ids
