@@ -9,8 +9,8 @@ from transformers import ElectraTokenizer
 
 class CustomDataset(Dataset):
     def __init__(self, tokenizer, config):
-        src_file_path = 'sample_src.txt'
-        trg_file_path = 'sample_trg.txt'
+        src_file_path = './sample_src.txt.txt'
+        trg_file_path = './sample_trg.txt.txt'
         with open(src_file_path, 'r', encoding='utf8') as f:
             src_lines = list(map(lambda x: x.strip('\n'), f.readlines()))
         with open(trg_file_path, 'r', encoding='utf8') as f:
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     model = Transformer(config).to(config.device)
 
     dataset = CustomDataset(tokenizer, config)
-    data_loader = DataLoader(dataset, batch_size=32, shuffle=True)
+    data_loader = DataLoader(dataset, batch_size=16, shuffle=True)
     criterion = nn.CrossEntropyLoss(ignore_index=0)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, mode='min', patience=2)
