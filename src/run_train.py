@@ -9,8 +9,8 @@ from transformers import ElectraTokenizer
 
 class CustomDataset(Dataset):
     def __init__(self, tokenizer, config):
-        src_file_path = './sample_src.txt.txt'
-        trg_file_path = './sample_trg.txt.txt'
+        src_file_path = './sample_src.txt'
+        trg_file_path = './sample_trg.txt'
         with open(src_file_path, 'r', encoding='utf8') as f:
             src_lines = list(map(lambda x: x.strip('\n'), f.readlines()))
         with open(trg_file_path, 'r', encoding='utf8') as f:

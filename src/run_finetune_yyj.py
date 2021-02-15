@@ -107,55 +107,55 @@ if __name__ == '__main__':
     # preserve = torch.ones(trg_vocab_size - class_weight.size()[0])
     # class_weight = torch.cat((class_weight, preserve), dim=0).to(config.device)
     # criterion = nn.CrossEntropyLoss(weight=class_weight)
-    # criterion = nn.CrossEntropyLoss(ignore_index=0)
-    # optimizer = optim.Adam(model.parameters(), lr=1e-4)
-    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
-    #                                                  mode='min',
-    #                                                  patience=2)
-    #
-    # train_continue = True
-    # if train_continue:
-    #     weights = glob.glob('./model_weight/transformer_normal_*')
-    #     last_epoch = int(weights[-1].split('_')[-1])
-    #     weight_path = weights[-1].replace('\\', '/')
-    #     print('weight info of last epoch', weight_path)
-    #     model.load_state_dict(torch.load(weight_path))
-    #     plus_epoch = 20
-    #     total_epoch = last_epoch + plus_epoch
-    # else:
-    #     last_epoch = 0
-    #     plus_epoch = 20
-    #     total_epoch = plus_epoch
-    #
-    # dataset = CustomDataset(config, tokenizer)
-    # data_loader = DataLoader(dataset, batch_size=16, shuffle=True)
-    #
-    # model.train()
-    # for epoch in range(plus_epoch):
-    #     total_loss = 0
-    #     for iteration, datas in enumerate(data_loader):
-    #         encoder_inputs, decoder_inputs, targets = datas
-    #         optimizer.zero_grad()
-    #         logits = model(encoder_inputs, decoder_inputs)
-    #         logits = logits.contiguous().view(-1, trg_vocab_size)
-    #         targets = targets.contiguous().view(-1)
-    #         # indices = targets.nonzero().squeeze(1)
-    #         # logits = logits.index_select(0, indices)
-    #         # targets = targets.index_select(0, indices)
-    #         loss = criterion(logits, targets)
-    #         loss.backward()
-    #         nn.utils.clip_grad_norm_(model.parameters(), 0.5)
-    #         optimizer.step()
-    #         total_loss += loss
-    #     scheduler.step(total_loss)
-    #         # if (iteration + 1) % 50 == 0:
-    #         #     print('Iteration: %3d \t' % (iteration + 1), 'Cost: {:.5f}'.format(loss))
-    #     # break
-    #     # if (epoch + 1) % 5 == 0:
-    #     print('Epoch: %3d\t' % (last_epoch + epoch + 1), 'Cost: {:.5f}'.format(total_loss/(iteration + 1)))
-    #     # if (epoch + 1) % 100 == 0:
-    # model_path = './model_weight/transformer_normal_%d' % total_epoch
-    # torch.save(model.state_dict(), model_path)
+    criterion = nn.CrossEntropyLoss(ignore_index=0)
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer,
+                                                     mode='min',
+                                                     patience=2)
+
+    train_continue = True
+    if train_continue:
+        weights = glob.glob('./model_weight/transformer_normal_*')
+        last_epoch = int(weights[-1].split('_')[-1])
+        weight_path = weights[-1].replace('\\', '/')
+        print('weight info of last epoch', weight_path)
+        model.load_state_dict(torch.load(weight_path))
+        plus_epoch = 20
+        total_epoch = last_epoch + plus_epoch
+    else:
+        last_epoch = 0
+        plus_epoch = 20
+        total_epoch = plus_epoch
+
+    dataset = CustomDataset(config, tokenizer)
+    data_loader = DataLoader(dataset, batch_size=16, shuffle=True)
+
+    model.train()
+    for epoch in range(plus_epoch):
+        total_loss = 0
+        for iteration, datas in enumerate(data_loader):
+            encoder_inputs, decoder_inputs, targets = datas
+            optimizer.zero_grad()
+            logits = model(encoder_inputs, decoder_inputs)
+            logits = logits.contiguous().view(-1, trg_vocab_size)
+            targets = targets.contiguous().view(-1)
+            # indices = targets.nonzero().squeeze(1)
+            # logits = logits.index_select(0, indices)
+            # targets = targets.index_select(0, indices)
+            loss = criterion(logits, targets)
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 0.5)
+            optimizer.step()
+            total_loss += loss
+        scheduler.step(total_loss)
+            # if (iteration + 1) % 50 == 0:
+            #     print('Iteration: %3d \t' % (iteration + 1), 'Cost: {:.5f}'.format(loss))
+        # break
+        # if (epoch + 1) % 5 == 0:
+        print('Epoch: %3d\t' % (last_epoch + epoch + 1), 'Cost: {:.5f}'.format(total_loss/(iteration + 1)))
+        # if (epoch + 1) % 100 == 0:
+    model_path = './model_weight/transformer_normal_%d' % total_epoch
+    torch.save(model.state_dict(), model_path)
 
     model.load_state_dict(torch.load('./model_weight/transformer_normal_20'))
     model.eval()
